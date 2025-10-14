@@ -1,0 +1,328 @@
+openapi: 3.1.0
+info:
+  title: Oasis Crypto Trader BFF API
+  version: 0.1.0
+  description: >-
+    API REST responsável por orquestrar operações do dashboard, gerenciamento de
+    estratégias e agregação de portfólio para o Oasis Crypto Trader.
+servers:
+  - url: https://api.oasis-crypto-trader.dev/v1
+    description: Ambiente de produção
+  - url: https://staging.api.oasis-crypto-trader.dev/v1
+    description: Ambiente de homologação
+security:
+  - bearerAuth: []
+tags:
+  - name: Portfolio
+  - name: Strategy
+  - name: Telemetry
+paths:
+  /portfolio/summary:
+    get:
+      summary: Obtém visão consolidada das carteiras conectadas.
+      tags: [Portfolio]
+      operationId: getPortfolioSummary
+      responses:
+        '200':
+          description: Resumo de portfólio consolidado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioSummary'
+  /portfolio/positions:
+    get:
+      summary: Lista posições abertas e saldos por exchange.
+      tags: [Portfolio]
+      operationId: listOpenPositions
+      parameters:
+        - in: query
+          name: exchange
+          required: false
+          schema:
+            type: string
+          description: Filtra por exchange específica.
+      responses:
+        '200':
+          description: Coleção de posições.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Position'
+  /portfolio/exchanges:
+    get:
+      summary: Consolida exposição e PnL por exchange conectada.
+      tags: [Portfolio]
+      operationId: listExchangeBreakdown
+      responses:
+        '200':
+          description: Resumo por exchange.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExchangeBreakdown'
+  /strategies:
+    get:
+      summary: Lista estratégias registradas.
+      tags: [Strategy]
+      operationId: listStrategies
+      responses:
+        '200':
+          description: Coleção de estratégias.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Strategy'
+    post:
+      summary: Cria nova estratégia.
+      tags: [Strategy]
+      operationId: createStrategy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrategyCreateRequest'
+      responses:
+        '201':
+          description: Estratégia criada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+  /strategies/{strategyId}:
+    patch:
+      summary: Atualiza parâmetros de uma estratégia.
+      tags: [Strategy]
+      operationId: updateStrategy
+      parameters:
+        - name: strategyId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrategyUpdateRequest'
+      responses:
+        '200':
+          description: Estratégia atualizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+  /strategies/{strategyId}/activate:
+    post:
+      summary: Ativa ou pausa execução da estratégia.
+      tags: [Strategy]
+      operationId: toggleStrategyActivation
+      parameters:
+        - name: strategyId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [activate, pause]
+      responses:
+        '202':
+          description: Operação aceita para processamento.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+  /telemetry/metrics:
+    get:
+      summary: Recupera métricas agregadas de performance das estratégias.
+      tags: [Telemetry]
+      operationId: getTelemetryMetrics
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Timestamp inicial para agregação.
+        - name: strategyId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Identificador da estratégia para filtrar as métricas retornadas.
+        - name: timeframe
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1h', '24h', '7d', '30d']
+          description: Janela temporal das métricas agregadas (ex: 1h, 24h, 7d, 30d).
+      responses:
+        '200':
+          description: Métricas agregadas por estratégia.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StrategyMetric'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    PortfolioSummary:
+      type: object
+      properties:
+        totalValueBRL:
+          type: number
+          format: double
+        totalValueUSD:
+          type: number
+          format: double
+        allocationByAsset:
+          type: array
+          items:
+            $ref: '#/components/schemas/Allocation'
+        realizedPnL30d:
+          type: number
+          format: double
+        unrealizedPnL:
+          type: number
+          format: double
+      required: [totalValueBRL, totalValueUSD, allocationByAsset, realizedPnL30d, unrealizedPnL]
+    Allocation:
+      type: object
+      properties:
+        asset:
+          type: string
+        percentage:
+          type: number
+          format: double
+      required: [asset, percentage]
+    Position:
+      type: object
+      properties:
+        exchange:
+          type: string
+        asset:
+          type: string
+        quantity:
+          type: number
+          format: double
+        averagePrice:
+          type: number
+          format: double
+        currentPrice:
+          type: number
+          format: double
+        pnl:
+          type: number
+          format: double
+      required: [exchange, asset, quantity, averagePrice, currentPrice, pnl]
+    ExchangeBreakdown:
+      type: object
+      properties:
+        exchange:
+          type: string
+        positionCount:
+          type: integer
+        marketValueUSD:
+          type: number
+          format: double
+        unrealizedPnL:
+          type: number
+          format: double
+      required: [exchange, positionCount, marketValueUSD, unrealizedPnL]
+    Strategy:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, paused]
+        type:
+          type: string
+        parameters:
+          type: object
+          additionalProperties:
+            type: number
+        schedule:
+          type: string
+          description: Expressão cron (UTC).
+        lastRunAt:
+          type: string
+          format: date-time
+        nextRunAt:
+          type: string
+          format: date-time
+      required: [id, name, status, type, parameters]
+    StrategyCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        parameters:
+          type: object
+          additionalProperties:
+            type: number
+        schedule:
+          type: string
+      required: [name, type, parameters]
+    StrategyUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        parameters:
+          type: object
+          additionalProperties:
+            type: number
+        schedule:
+          type: string
+      additionalProperties: false
+    StrategyMetric:
+      type: object
+      properties:
+        strategyId:
+          type: string
+        name:
+          type: string
+        timeframe:
+          type: string
+          enum: [1h, 24h, 7d, 30d]
+        grossReturn:
+          type: number
+          format: double
+        netReturn:
+          type: number
+          format: double
+        maxDrawdown:
+          type: number
+          format: double
+        sharpeRatio:
+          type: number
+          format: double
+        computedAt:
+          type: string
+          format: date-time
+      required: [strategyId, name, timeframe, grossReturn, netReturn, maxDrawdown, sharpeRatio]
