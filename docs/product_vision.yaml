@@ -1,0 +1,23 @@
+# Documento: product_vision.yaml
+info:
+  projeto: "Bot de Negociação Multiestratégia"
+  cliente: "Cliente Particular"
+  data: "2024-05-23"
+
+declaracao_de_visao:
+  para: "Investidores individuais de criptomoedas com múltiplas carteiras"
+  que_precisa: "Automatizar negociações para maximizar ganhos e reduzir perdas com controle de risco"
+  o_produto_e: "Oasis Crypto Trader, um bot de negociação de criptomoedas multi-plataforma"
+  que_fornece: "Estratégias automatizadas otimizadas e monitoramento consolidado com alertas proativos"
+  diferente_de: "Bots genéricos caros e difíceis de configurar"
+  nossa_solucao: "Integração unificada com múltiplas exchanges e carteiras, automação configurável por estratégia e observabilidade nativa"
+
+principais_funcionalidades:
+  - "User Story 1: Como investidor, eu quero visualizar em um dashboard consolidado o desempenho de todas as minhas carteiras para acompanhar meus resultados em tempo real."
+  - "User Story 2: Como investidor, eu quero cadastrar e gerenciar múltiplas estratégias de negociação para diversificar minhas abordagens de mercado."
+  - "User Story 3: Como investidor, eu quero conectar o bot a diferentes exchanges e wallets para operar com meus ativos já existentes."
+
+restricoes_e_metricas:
+  restricoes_tecnicas: "Compatibilidade com exchanges com APIs públicas (ex: Binance, Coinbase) e operação em infraestrutura de baixo custo (<= R$200/mês)."
+  requisitos_nao_funcionais_chave: "Segurança das credenciais (armazenamento cifrado), tolerância a falhas, latência de execução de ordens < 2s, disponibilidade de 99%."
+  kpis_de_sucesso: "Redução de 15% na perda máxima (drawdown) e aumento de 10% no retorno líquido em 6 meses."
