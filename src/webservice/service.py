@@ -1,91 +1,153 @@
-import os
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from jinja2 import Environment, FileSystemLoader
-from motor.motor_asyncio import AsyncIOMotorClient
-from src.common.db_manager import PostgresManager
-from src.risk_engine.position_manager import PositionManager
+from __future__ import annotations
 
-app = FastAPI()
+import os
+from datetime import datetime
+from typing import Optional
+
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.common.db_manager import PostgresManager
+
+from .models import (
+    ExchangeBreakdown,
+    PortfolioSummary,
+    Position,
+    Strategy,
+    StrategyCreateRequest,
+    StrategyMetric,
+    StrategyUpdateRequest,
+)
+from .services.portfolio import PortfolioService
+from .services.strategy import StrategyService
+from .services.telemetry import TelemetryService
+
+
+app = FastAPI(title="Oasis Crypto Trader BFF", version="0.1.0")
+
+
+def _build_allowed_origins() -> list[str]:
+    origins = os.getenv("DASHBOARD_ALLOWED_ORIGINS", "http://localhost:3000")
+    return [origin.strip() for origin in origins.split(",") if origin.strip()]
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_build_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configura o Jinja2 para renderizar o template HTML da pasta correta
-templates = Environment(loader=FileSystemLoader("src/webservice/templates"))
+
+_portfolio_service: Optional[PortfolioService] = None
+_strategy_service: Optional[StrategyService] = None
+_telemetry_service: Optional[TelemetryService] = None
+
 
 @app.on_event("startup")
-async def startup_db_client():
-    app.mongodb_client = AsyncIOMotorClient(os.getenv("MONGO_DB_URI"))
-    app.mongodb = app.mongodb_client["oasis_db"]
-    print("Conexão com o MongoDB estabelecida.")
+def startup_services() -> None:
+    global _portfolio_service, _strategy_service, _telemetry_service
+
+    fx_rate = float(os.getenv("USD_BRL_RATE", "5.0"))
+    _portfolio_service = PortfolioService(PostgresManager(), usd_brl_rate=fx_rate)
+    _strategy_service = StrategyService(PostgresManager())
+    _telemetry_service = TelemetryService(PostgresManager())
+
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
-    app.mongodb_client.close()
+def shutdown_services() -> None:
+    global _portfolio_service, _strategy_service, _telemetry_service
+    _portfolio_service = None
+    _strategy_service = None
+    _telemetry_service = None
+    PostgresManager.close_pool()
 
-# ✅ CORREÇÃO: Adiciona o endpoint para servir o index.html na rota "/"
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    template = templates.get_template("index.html")
-    return HTMLResponse(content=template.render(request={}))
 
-@app.get("/api/status")
-def get_status():
+def get_portfolio_service() -> PortfolioService:
+    if _portfolio_service is None:
+        raise HTTPException(status_code=500, detail="Portfolio service not initialised")
+    return _portfolio_service
+
+
+def get_strategy_service() -> StrategyService:
+    if _strategy_service is None:
+        raise HTTPException(status_code=500, detail="Strategy service not initialised")
+    return _strategy_service
+
+
+def get_telemetry_service() -> TelemetryService:
+    if _telemetry_service is None:
+        raise HTTPException(status_code=500, detail="Telemetry service not initialised")
+    return _telemetry_service
+
+
+@app.get("/health")
+def healthcheck() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/portfolio/summary", response_model=PortfolioSummary)
+async def get_portfolio_summary(service: PortfolioService = Depends(get_portfolio_service)) -> PortfolioSummary:
+    return await run_in_threadpool(service.get_summary)
+
+
+@app.get("/portfolio/positions", response_model=list[Position])
+async def list_portfolio_positions(
+    exchange: Optional[str] = Query(None, description="Filtra por exchange específica."),
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> list[Position]:
+    return await run_in_threadpool(service.list_positions, exchange)
+
+
+@app.get("/portfolio/exchanges", response_model=list[ExchangeBreakdown])
+async def list_exchange_breakdown(
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> list[ExchangeBreakdown]:
+    return await run_in_threadpool(service.list_exchange_breakdown)
+
+
+@app.get("/strategies", response_model=list[Strategy])
+async def list_strategies(service: StrategyService = Depends(get_strategy_service)) -> list[Strategy]:
+    return await run_in_threadpool(service.list_strategies)
+
+
+@app.post("/strategies", response_model=Strategy, status_code=201)
+async def create_strategy(
+    payload: StrategyCreateRequest,
+    service: StrategyService = Depends(get_strategy_service),
+) -> Strategy:
+    return await run_in_threadpool(service.create_strategy, payload)
+
+
+@app.patch("/strategies/{strategy_id}", response_model=Strategy)
+async def patch_strategy(
+    strategy_id: str,
+    payload: StrategyUpdateRequest,
+    service: StrategyService = Depends(get_strategy_service),
+) -> Strategy:
     try:
-        product_id = os.getenv("STRATEGY_PRODUCT_ID", "BTC-USD")
-        pos_manager = PositionManager(product_id)
-        return {
-            "product_id": pos_manager.product_id,
-            "position_size": pos_manager.position_size,
-            "average_price": pos_manager.average_price,
-            "realized_pnl": pos_manager.realized_pnl,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return await run_in_threadpool(service.update_strategy, strategy_id, payload)
+    except ValueError as exc:  # Strategy not found
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-@app.get("/api/paper/status")
-def get_paper_status():
-    """Retorna os KPIs da simulação de paper trading."""
-    # Esta é uma implementação de exemplo. A lógica de PnL seria mais complexa.
-    try:
-        db = PostgresManager()
-        query = "SELECT COUNT(*) as trade_count FROM orders WHERE exchange_order_id LIKE 'PAPER-%'"
-        result = db.execute_query(query, fetch="one")
-        return {
-            "initial_capital": 1000.0, # Exemplo
-            "current_capital": 1050.25, # Exemplo
-            "total_pnl_usd": 50.25, # Exemplo
-            "total_pnl_pct": 5.02, # Exemplo
-            "trade_count": result['trade_count'] if result else 0
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/paper/trades")
-def get_paper_trades():
-    """Retorna o histórico de trades do modo papel."""
+@app.post("/strategies/{strategy_id}/activate", response_model=Strategy, status_code=202)
+async def toggle_strategy(
+    strategy_id: str,
+    action: str = Query(..., pattern="^(activate|pause)$"),
+    service: StrategyService = Depends(get_strategy_service),
+) -> Strategy:
     try:
-        db = PostgresManager()
-        query = "SELECT side, quantity, price, created_at FROM orders WHERE exchange_order_id LIKE 'PAPER-%' ORDER BY created_at DESC"
-        trades = db.execute_query(query, fetch="all")
-        return [dict(trade) for trade in trades]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return await run_in_threadpool(service.toggle_activation, strategy_id, action)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-@app.get("/api/portfolio/history")
-async def get_portfolio_history():
-    """Retorna os últimos 100 snapshots de portfólio para o gráfico."""
-    try:
-        history_cursor = app.mongodb.portfolio_history.find().sort("timestamp", -1).limit(100)
-        history = await history_cursor.to_list(length=100)
-        # Inverte a lista para que o gráfico seja exibido na ordem cronológica correta
-        return list(reversed(history))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))    
+
+@app.get("/telemetry/metrics", response_model=list[StrategyMetric])
+async def get_telemetry_metrics(
+    since: Optional[datetime] = Query(None, description="Timestamp inicial para agregação."),
+    service: TelemetryService = Depends(get_telemetry_service),
+) -> list[StrategyMetric]:
+    return await run_in_threadpool(service.list_metrics, since)

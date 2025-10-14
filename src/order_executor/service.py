@@ -1,4 +1,5 @@
-import grpc
+import os
+
 import grpc
 from concurrent import futures
 from src.contracts_generated import trading_system_pb2
@@ -16,14 +17,22 @@ class ExecutionService(trading_system_pb2_grpc.ExecutionServiceServicer):
         try:
             # 1. Primeiro, insere a ordem no DB com status 'PENDING'
             insert_query = """
-            INSERT INTO orders (client_order_id, product_id, side, quantity, price, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO orders (client_order_id, product_id, exchange, side, quantity, price, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             # client_order_id viria do RiskEngine, por agora geramos um
             client_order_id = f"test-{request.symbol}-{request.price}"
             self.db_manager.execute_query(
                 insert_query,
-                (client_order_id, request.symbol, 'BUY', request.quantity, request.price, 'PENDING')
+                (
+                    client_order_id,
+                    request.symbol,
+                    os.getenv("DEFAULT_EXCHANGE", "coinbase"),
+                    'BUY',
+                    request.quantity,
+                    request.price,
+                    'PENDING',
+                ),
             )
 
             # 2. Envia a ordem para a exchange
