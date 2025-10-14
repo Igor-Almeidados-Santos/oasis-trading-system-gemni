@@ -35,6 +35,48 @@ if "psycopg2" not in sys.modules:  # pragma: no cover - disponibiliza stub para 
     sys.modules["psycopg2.pool"] = pool
 
 
+
+if "grpc" not in sys.modules:  # pragma: no cover - stub simplificado para testes
+    grpc = types.ModuleType("grpc")
+
+    class _StatusCode:
+        INVALID_ARGUMENT = object()
+        FAILED_PRECONDITION = object()
+        INTERNAL = object()
+
+    class _RpcError(Exception):
+        def details(self):
+            return str(self)
+
+        def code(self):
+            return _StatusCode.INTERNAL
+
+    def _insecure_channel(_target):  # pragma: no cover - canal fake
+        return types.SimpleNamespace(unary_unary=lambda *_args, **_kwargs: (lambda request: request))
+
+    def _server(_executor):  # pragma: no cover - servidor fake
+        return types.SimpleNamespace(
+            add_insecure_port=lambda *_args, **_kwargs: None,
+            start=lambda: None,
+            wait_for_termination=lambda: None,
+        )
+
+    grpc.StatusCode = _StatusCode
+    grpc.RpcError = _RpcError
+    grpc.insecure_channel = _insecure_channel
+    grpc.server = _server
+
+    sys.modules["grpc"] = grpc
+
+if "dotenv" not in sys.modules:  # pragma: no cover - stub mínimo
+    dotenv = types.ModuleType("dotenv")
+
+    def _load_dotenv(*_args, **_kwargs):  # pragma: no cover - carrega nada
+        return False
+
+    dotenv.load_dotenv = _load_dotenv
+    sys.modules["dotenv"] = dotenv
+    sys.modules["dotenv.load_dotenv"] = _load_dotenv
 if "pydantic" not in sys.modules:  # pragma: no cover - stub mínimo para tipagens
     pydantic = types.ModuleType("pydantic")
 

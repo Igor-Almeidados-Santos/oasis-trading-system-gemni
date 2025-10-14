@@ -75,4 +75,7 @@ logs/
 
 # ## 8. Outros
 # Ficheiros compilados do gRPC (gerados pelo script, não precisam ser versionados)
-src/contracts_generated/
+src/contracts_generated/*
+!src/contracts_generated/__init__.py
+!src/contracts_generated/trading_system_pb2.py
+!src/contracts_generated/trading_system_pb2_grpc.py
